@@ -72,6 +72,9 @@ public class MavenRunner {
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
 
         if (isWindows) {
+            // Windows: .cmd 파일은 ProcessBuilder에서 직접 실행 불가 → cmd /c 필요
+            cmd.add("cmd");
+            cmd.add("/c");
             Path wrapper = repoPath.resolve("mvnw.cmd");
             cmd.add(Files.exists(wrapper) ? wrapper.toAbsolutePath().toString() : "mvn");
         } else {

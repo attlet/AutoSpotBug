@@ -1,314 +1,397 @@
-# AutoSpotBug 사용 매뉴얼
+# AutoSpotBug 사용 가이드
 
-GitLab에서 관리되는 Java 프로젝트를 자동으로 SpotBugs 정적분석하여 XML 보고서를 추출하는 도구입니다.
+> **AutoSpotBug란?**
+> GitLab에 올라가 있는 Java 프로젝트들을 자동으로 내려받아 버그를 찾아주는 도구입니다.
+> 분석 결과는 XML 파일로 저장되며, IntelliJ에서 바로 열어볼 수 있습니다.
 
 ---
 
 ## 목차
 
-1. [사전 요구사항](#1-사전-요구사항)
-2. [빌드](#2-빌드)
-3. [프로젝트 목록 설정](#3-프로젝트-목록-설정)
-4. [실행](#4-실행)
-5. [동작 방식](#5-동작-방식)
-6. [출력 결과](#6-출력-결과)
-7. [옵션 전체 목록](#7-옵션-전체-목록)
-8. [SpotBugs init script 커스터마이징](#8-spotbugs-init-script-커스터마이징)
-9. [트러블슈팅](#9-트러블슈팅)
+1. [처음 한 번만 하는 준비 작업](#1-처음-한-번만-하는-준비-작업)
+2. [분석할 프로젝트 목록 등록하기](#2-분석할-프로젝트-목록-등록하기)
+3. [실행하기](#3-실행하기)
+4. [결과 확인하기](#4-결과-확인하기)
+5. [문제가 생겼을 때](#5-문제가-생겼을-때)
 
 ---
 
-## 1. 사전 요구사항
+## 1. 처음 한 번만 하는 준비 작업
 
-| 항목 | 버전 | 비고 |
-|------|------|------|
-| JDK | 17 이상 | `java -version` 으로 확인 |
-| Git | 2.x 이상 | 분석 대상 프로젝트 clone 용 |
-| GitLab PAT | - | `read_repository` 권한 필요 |
+### 1-1. Java 설치 확인
 
-> **분석 대상 프로젝트의 빌드 도구**
-> 프로젝트에 `gradlew` / `mvnw` Wrapper가 있으면 별도 설치 불필요합니다.
-> Wrapper가 없으면 시스템에 `gradle` 또는 `mvn`이 PATH에 등록되어 있어야 합니다.
+AutoSpotBug를 실행하려면 Java 17 이상이 필요합니다.
+아래 명령어를 터미널(명령 프롬프트)에 입력해 버전을 확인하세요.
 
-> **GitLab Personal Access Token 발급**
-> GitLab → 우측 상단 프로필 → Edit profile → Access Tokens
-> → `read_repository` 권한 선택 후 생성
+```
+java -version
+```
+
+결과가 아래처럼 `17` 이상이면 됩니다.
+
+```
+openjdk version "17.0.x" ...
+```
+
+버전이 낮거나 java 명령어를 찾을 수 없다면 [Java 17 다운로드](https://adoptium.net/)에서 설치하세요.
 
 ---
 
-## 2. 빌드
+### 1-2. Git 설치 확인
 
-```bash
-# 저장소 clone
+```
+git --version
+```
+
+`git version 2.x.x` 처럼 나오면 정상입니다. 없으면 [Git 다운로드](https://git-scm.com/)에서 설치하세요.
+
+---
+
+### 1-3. AutoSpotBug 내려받기 및 빌드
+
+터미널을 열고 아래 명령어를 순서대로 입력합니다.
+
+**Windows (명령 프롬프트 또는 PowerShell):**
+
+```
 git clone https://github.com/attlet/AutoSpotBug.git
 cd AutoSpotBug
+gradlew.bat shadowJar
+```
 
-# Fat JAR 빌드
+**Mac / Linux (터미널):**
+
+```
+git clone https://github.com/attlet/AutoSpotBug.git
+cd AutoSpotBug
 ./gradlew shadowJar
 ```
 
-빌드 완료 시 `build/libs/autospotbug.jar` 가 생성됩니다.
+완료되면 `build/libs/autospotbug.jar` 파일이 생성됩니다. 이 파일이 AutoSpotBug 실행 파일입니다.
 
 ---
 
-## 3. 프로젝트 목록 설정
+### 1-4. GitLab 토큰 발급받기
 
-`config/projects.yaml` 에 분석할 GitLab 프로젝트 목록을 작성합니다.
+> **토큰이란?** GitLab에서 본인 계정을 증명하는 비밀번호 같은 것입니다. 이 토큰이 있어야 AutoSpotBug가 GitLab에서 프로젝트를 내려받을 수 있습니다.
+
+1. 사내 GitLab에 로그인합니다.
+2. 오른쪽 위 프로필 사진 클릭 → **Edit profile** 클릭
+3. 왼쪽 메뉴에서 **Access Tokens** 클릭
+4. 아래처럼 입력 후 **Create personal access token** 클릭:
+   - Token name: `autospotbug` (구분하기 쉬운 이름)
+   - Expiration date: 원하는 만료일 (공백이면 무기한)
+   - **`read_repository` 체크** ← 이것만 체크하면 됩니다
+5. 생성된 토큰을 복사해서 안전한 곳에 저장해두세요. **페이지를 나가면 다시 볼 수 없습니다.**
+
+---
+
+## 2. 분석할 프로젝트 목록 등록하기
+
+### 2-1. 설정 파일 열기
+
+AutoSpotBug 폴더 안에 있는 `conf/projects.yaml` 파일을 메모장이나 텍스트 편집기로 엽니다.
+
+```
+AutoSpotBug/
+└── conf/
+    └── projects.yaml   ← 이 파일을 엽니다
+```
+
+---
+
+### 2-2. 프로젝트 추가하기
+
+파일 내용을 아래 형식에 맞게 작성합니다.
+
+**프로젝트 경로 확인 방법:**
+GitLab에서 분석할 프로젝트를 열면 주소가 이렇게 나옵니다:
+
+```
+https://gitlab.company.com/그룹명/레포이름
+```
+
+여기서 `그룹명/레포이름` 부분이 `path`에 들어갑니다.
+
+---
+
+#### Spring Boot / Gradle 프로젝트
 
 ```yaml
 projects:
-  - name: admin-service           # 보고서 파일명에 사용될 식별자
-    path: group/admin-service     # GitLab 프로젝트 경로 (namespace/repo)
-    branch: develop               # 분석 대상 브랜치
+  - name: admin-service         # 보고서 파일 이름 앞에 붙는 이름 (자유롭게 지정)
+    path: group/admin-service   # GitLab URL에서 도메인 뒷부분
+    branch: develop             # 분석할 브랜치 이름
+```
 
+#### Maven 프로젝트
+
+Maven 프로젝트도 형식은 동일합니다. 빌드 도구는 자동으로 감지됩니다.
+
+```yaml
   - name: batch-job
     path: group/batch-job
     branch: develop
 ```
 
-| 필드 | 필수 | 설명 |
-|------|------|------|
-| `name` | ✅ | 출력 XML 파일명 prefix. 영문/숫자/하이픈 권장 |
-| `path` | ✅ | GitLab URL 뒤의 경로. `그룹명/레포명` 형식 |
-| `branch` | ✅ | 분석할 브랜치명. 생략 시 `develop` 기본값 적용 |
+#### Makefile로 빌드하는 순수 Java 프로젝트
+
+빌드 결과물(JAR 파일)이 어디에 생기는지 알아야 합니다. 모르면 개발자에게 물어보세요.
+
+```yaml
+  - name: legacy-daemon
+    path: group/legacy-daemon
+    branch: develop
+    build_tool: makefile              # Makefile 프로젝트임을 명시
+    make_target: build                # Makefile에서 실행할 타겟 (모르면 생략)
+    jar_path: dist/legacy-daemon.jar  # 빌드 후 JAR 파일 위치
+```
+
+JAR 파일이 아닌 클래스 폴더를 사용하는 경우:
+
+```yaml
+  - name: another-daemon
+    path: group/another-daemon
+    branch: develop
+    build_tool: makefile
+    classes_dir: out/production/classes  # 클래스 파일이 있는 폴더
+```
 
 ---
 
-## 4. 실행
+### 2-3. 여러 프로젝트 한 번에 등록하기
 
-### 기본 실행
+`-` 로 시작하는 항목을 여러 개 작성하면 됩니다.
 
-```bash
-java -jar build/libs/autospotbug.jar \
-  --gitlab-url https://gitlab.company.com \
-  --token YOUR_PERSONAL_ACCESS_TOKEN
+```yaml
+projects:
+  - name: admin-service
+    path: group/admin-service
+    branch: develop
+
+  - name: batch-job
+    path: group/batch-job
+    branch: develop
+
+  - name: legacy-daemon
+    path: group/legacy-daemon
+    branch: develop
+    build_tool: makefile
+    jar_path: dist/legacy-daemon.jar
 ```
 
-### 토큰을 환경변수로 전달 (권장)
+> **주의:** 들여쓰기(띄어쓰기)가 틀리면 오류가 납니다. 각 항목 앞의 공백 개수를 동일하게 맞춰주세요.
 
-토큰을 `--token` 인수로 전달하면 shell history에 남습니다. 환경변수 사용을 권장합니다.
+---
 
-```bash
-# Linux / macOS
-export GITLAB_TOKEN=YOUR_PERSONAL_ACCESS_TOKEN
+## 3. 실행하기
 
-# Windows
-set GITLAB_TOKEN=YOUR_PERSONAL_ACCESS_TOKEN
+터미널에서 AutoSpotBug 폴더로 이동한 후 아래 명령어를 실행합니다.
 
-# --token 생략 가능
+`https://gitlab.company.com` 부분은 **실제 사내 GitLab 주소**로,
+`여기에_토큰_붙여넣기` 부분은 **1-4단계에서 복사한 토큰**으로 바꾸세요.
+
+**Windows:**
+
+```
+java -jar build\libs\autospotbug.jar --gitlab-url https://gitlab.company.com --token 여기에_토큰_붙여넣기
+```
+
+**Mac / Linux:**
+
+```
+java -jar build/libs/autospotbug.jar --gitlab-url https://gitlab.company.com --token 여기에_토큰_붙여넣기
+```
+
+---
+
+### 토큰을 명령어에 직접 쓰고 싶지 않은 경우 (보안)
+
+명령어에 토큰을 직접 쓰면 기록에 남을 수 있습니다. 아래처럼 환경변수로 먼저 설정하면 `--token` 을 생략할 수 있습니다.
+
+**Windows (명령 프롬프트):**
+
+```
+set GITLAB_TOKEN=여기에_토큰_붙여넣기
+java -jar build\libs\autospotbug.jar --gitlab-url https://gitlab.company.com
+```
+
+**Mac / Linux:**
+
+```
+export GITLAB_TOKEN=여기에_토큰_붙여넣기
 java -jar build/libs/autospotbug.jar --gitlab-url https://gitlab.company.com
 ```
 
-### 개발 중 Gradle로 직접 실행
+---
 
-```bash
-./gradlew run --args="--gitlab-url https://gitlab.company.com --token YOUR_TOKEN"
+### 실행 중 화면
+
+정상적으로 실행되면 아래처럼 진행 상황이 출력됩니다.
+
+```
+[10:23:01] INFO  [admin-service] 분석 시작
+[10:23:01] INFO  [admin-service] clone (branch: develop) → workspace/admin-service
+[10:23:10] INFO  [admin-service] 빌드 도구: GRADLE
+[10:23:10] INFO  [admin-service] Gradle SpotBugs 실행 중...
+[10:23:44] INFO  [admin-service] 보고서 저장: output/admin-service-spotbugs.xml
+...
+[10:24:25] INFO  분석 완료: 2개 프로젝트 / 성공 2 / 실패 0
+[10:24:25] INFO    ✔ admin-service → output/admin-service-spotbugs.xml
+[10:24:25] INFO    ✔ legacy-daemon → output/legacy-daemon-spotbugs.xml
 ```
 
-### 경로 옵션을 직접 지정하는 경우
-
-```bash
-java -jar build/libs/autospotbug.jar \
-  --gitlab-url https://gitlab.company.com \
-  --token YOUR_TOKEN \
-  --config /path/to/my-projects.yaml \
-  --output /path/to/reports \
-  --workspace /path/to/workspace
-```
+완료까지 프로젝트 크기에 따라 수 분이 걸릴 수 있습니다.
 
 ---
 
-## 5. 동작 방식
+## 4. 결과 확인하기
 
-프로젝트 1개당 아래 순서로 처리됩니다.
+### 보고서 파일 위치
 
-```
-1. Git clone / pull
-   - workspace/{name}/.git 이 없으면 → single-branch clone
-   - 이미 존재하면 → fetch → checkout → reset --hard origin/{branch}
-
-2. 빌드 도구 자동 감지
-   - build.gradle 또는 build.gradle.kts 존재 → GRADLE
-   - pom.xml 존재 → MAVEN
-   - 둘 다 없으면 → 오류
-
-3. SpotBugs 실행 (대상 프로젝트 파일 수정 없음)
-   [Gradle]
-   - gradlew.bat (Windows) / gradlew (Linux·macOS) 우선 사용
-   - 없으면 시스템 gradle 사용
-   - 실행: spotbugsMain -x test --init-script spotbugs-init.gradle --continue --no-daemon
-   - SpotBugs 설정: effort=max, reportLevel=low, ignoreFailures=true
-
-   [Maven]
-   - mvnw.cmd (Windows) / mvnw (Linux·macOS) 우선 사용
-   - 없으면 시스템 mvn 사용
-   - 실행: com.github.spotbugs:spotbugs-maven-plugin:spotbugs
-           -DxmlOutput=true -Dspotbugs.effort=Max -Dspotbugs.threshold=Low
-           -Dspotbugs.failOnError=false --batch-mode -DskipTests=true
-
-4. XML 보고서 수집
-   [Gradle] **/build/reports/spotbugs/*.xml
-   [Maven]  **/target/spotbugsXml.xml
-
-5. output/ 에 저장
-   단일 모듈  → {name}-spotbugs.xml
-   멀티 모듈  → {name}-{module}-spotbugs.xml
-```
-
----
-
-## 6. 출력 결과
-
-### 보고서 파일명 규칙
-
-| 프로젝트 구조 | 저장 파일명 예시 |
-|---|---|
-| 단일 모듈 | `admin-service-spotbugs.xml` |
-| 멀티 모듈 (core, api) | `batch-job-core-spotbugs.xml`, `batch-job-api-spotbugs.xml` |
-
-### 콘솔 출력 예시
-
-```
-[10:23:01] INFO     ==================================================
-[10:23:01] INFO     [admin-service] 분석 시작
-[10:23:01] INFO     [admin-service] clone (branch: develop) → workspace/admin-service
-[10:23:10] INFO     [admin-service] 빌드 도구: GRADLE
-[10:23:10] INFO     [admin-service] Gradle SpotBugs 실행 중...
-[10:23:45] INFO     [admin-service] 보고서 저장: output/admin-service-spotbugs.xml
-[10:23:45] INFO     ============================================================
-[10:23:45] INFO     분석 완료: 2개 프로젝트 / 성공 2 / 실패 0
-[10:23:45] INFO     [성공]
-[10:23:45] INFO       ✔ admin-service → output/admin-service-spotbugs.xml
-[10:23:45] INFO       ✔ batch-job → output/batch-job-spotbugs.xml
-[10:23:45] INFO     보고서 저장 위치: /absolute/path/to/output
-[10:23:45] INFO     ============================================================
-```
-
-### 로그 파일
-
-실행 디렉토리에 `spotbugs-run.log` 로 동일한 내용이 저장됩니다.
-
-### 종료 코드
-
-| 종료 코드 | 의미 |
-|-----------|------|
-| `0` | 모든 프로젝트 성공 |
-| `1` | 1개 이상 프로젝트 실패 (CI 파이프라인 연동 가능) |
-
-### IntelliJ에서 XML 열기
-
-> SpotBugs 탭 → Import Bug Collection → 생성된 XML 파일 선택
-
----
-
-## 7. 옵션 전체 목록
-
-```
-java -jar build/libs/autospotbug.jar [OPTIONS]
-
-필수:
-  --gitlab-url <url>     GitLab 서버 URL
-                         예: https://gitlab.company.com
-
-선택:
-  --token      <token>   GitLab Personal Access Token
-                         미입력 시 환경변수 GITLAB_TOKEN 사용
-  --config     <path>    프로젝트 목록 YAML 파일 경로
-                         (기본: config/projects.yaml)
-  --output     <path>    XML 보고서 저장 디렉토리
-                         (기본: output/)
-  --workspace  <path>    Git clone 임시 저장 디렉토리
-                         (기본: workspace/)
-  -h, --help             도움말 출력
-```
-
----
-
-## 8. SpotBugs init script 커스터마이징
-
-Gradle 프로젝트 분석 시 사용되는 init script는 JAR 내부에 번들되어 있습니다.
-SpotBugs 설정(effort, reportLevel 등)을 변경하려면 실행 디렉토리에 아래 파일을 생성하세요.
-**로컬 파일이 있으면 JAR 내부 번들보다 우선 적용됩니다.**
+분석이 끝나면 `output/` 폴더에 XML 파일이 생성됩니다.
 
 ```
 AutoSpotBug/
-└── resources/
-    └── spotbugs-init.gradle   ← 이 파일이 존재하면 우선 사용
-```
-
-기본 설정값:
-
-| 항목 | 값 | 설명 |
-|------|-----|------|
-| `effort` | `max` | 분석 정밀도 최대 |
-| `reportLevel` | `low` | 낮은 심각도 버그까지 포함 |
-| `ignoreFailures` | `true` | 버그 발견 시에도 빌드 실패 처리 안 함 |
-| 출력 형식 | XML only | HTML 비활성화 |
-
----
-
-## 9. 트러블슈팅
-
-### git clone 실패
-
-```
-git clone 실패: fatal: repository not found
-```
-
-- `projects.yaml` 의 `path` 가 올바른지 확인 (`그룹명/레포명`)
-- GitLab PAT의 `read_repository` 권한 확인
-- `--gitlab-url` 끝에 `/` 없는지 확인
-
----
-
-### SpotBugs XML 보고서를 찾을 수 없음
-
-```
-SpotBugs XML 보고서를 찾을 수 없습니다. 컴파일 오류를 확인하세요.
-```
-
-프로젝트가 컴파일 가능한지 수동으로 확인합니다.
-
-```bash
-cd workspace/프로젝트명
-
-# Gradle
-./gradlew compileJava
-
-# Maven
-./mvnw compile
-```
-
-JDK 버전도 확인합니다.
-```bash
-java -version
+└── output/
+    ├── admin-service-spotbugs.xml
+    ├── batch-job-core-spotbugs.xml   ← 멀티모듈 프로젝트는 모듈별로 분리
+    ├── batch-job-api-spotbugs.xml
+    └── legacy-daemon-spotbugs.xml
 ```
 
 ---
 
-### Gradle Wrapper 실행 권한 오류 (Linux / macOS)
+### IntelliJ에서 보고서 열기
 
-AutoSpotBug가 자동으로 실행 권한을 부여하지만, 수동 적용도 가능합니다.
+1. IntelliJ에서 **SpotBugs** 플러그인을 설치합니다.
+   - File → Settings → Plugins → `SpotBugs` 검색 후 설치
+2. 아래 메뉴로 보고서를 불러옵니다:
+   - SpotBugs 탭 → **Import Bug Collection** → XML 파일 선택
 
-```bash
-chmod +x workspace/프로젝트명/gradlew
+---
 
-# 전체 일괄 적용
-find workspace/ -name gradlew -exec chmod +x {} \;
+### 로그 파일
+
+실행 내역은 `spotbugs-run.log` 파일에도 저장됩니다. 문제가 생겼을 때 이 파일을 참고하세요.
+
+---
+
+## 5. 문제가 생겼을 때
+
+### "repository not found" 또는 "clone 실패" 메시지
+
+GitLab에서 프로젝트를 찾지 못한 경우입니다.
+
+**확인 목록:**
+- `conf/projects.yaml`의 `path` 값이 GitLab URL에서 도메인 이후 경로와 정확히 일치하는지 확인
+  - GitLab 주소: `https://gitlab.company.com/team/my-project`
+  - `path` 값: `team/my-project`
+- GitLab에서 해당 프로젝트에 접근 권한이 있는지 확인
+- 1-4단계에서 발급한 토큰에 `read_repository` 권한이 있는지 확인
+- `--gitlab-url` 주소 끝에 `/` 가 없는지 확인 (`https://gitlab.company.com/` ❌, `https://gitlab.company.com` ✅)
+
+---
+
+### "SpotBugs XML 보고서를 찾을 수 없습니다" 메시지
+
+프로젝트 코드에 컴파일 오류가 있어서 분석을 진행할 수 없는 경우입니다.
+
+해당 프로젝트의 개발자에게 `develop` 브랜치 코드가 정상적으로 빌드되는지 확인을 요청하세요.
+
+---
+
+### "분석 대상을 자동으로 찾을 수 없습니다" 메시지 (Makefile 프로젝트)
+
+Makefile 프로젝트에서 빌드 결과물 위치를 찾지 못한 경우입니다.
+
+`conf/projects.yaml`에 빌드 결과물 경로를 직접 지정해야 합니다. 해당 프로젝트 개발자에게 `make` 실행 후 JAR 파일이나 클래스 파일이 어느 폴더에 생성되는지 확인하세요.
+
+```yaml
+- name: legacy-daemon
+  path: group/legacy-daemon
+  branch: develop
+  build_tool: makefile
+  jar_path: dist/legacy-daemon.jar    # JAR 파일 경로를 여기에 입력
 ```
 
 ---
 
-### 재실행 시 전체 재clone 원하는 경우
+### "make 빌드 실패" 메시지
 
-`workspace/` 를 삭제하면 다음 실행 시 모든 프로젝트를 새로 clone합니다.
+- Windows 환경이라면 `make`가 설치되어 있는지 확인하세요. (설치: [winget](https://winget.run/pkg/GnuWin32/Make) 또는 `choco install make`)
+- `make_target` 값이 해당 프로젝트 Makefile에 실제로 정의된 타겟 이름인지 확인하세요.
+- `make_target`을 생략하면 Makefile의 첫 번째 타겟이 실행됩니다.
 
-```bash
+---
+
+### 인터넷이 안 되는 환경에서 Makefile 프로젝트 분석 실패
+
+Makefile 프로젝트는 처음 실행 시 SpotBugs 분석 도구를 인터넷에서 자동으로 내려받습니다.
+사내 방화벽으로 인터넷이 차단된 경우, 아래 경로에 SpotBugs를 수동으로 복사하면 다운로드를 건너뜁니다.
+
+```
+AutoSpotBug/
+└── workspace/
+    └── .spotbugs-cache/
+        └── spotbugs-4.8.6/
+            └── lib/
+                └── spotbugs.jar   ← 이 파일이 있으면 다운로드 생략
+```
+
+SpotBugs 배포판은 [SpotBugs GitHub Releases](https://github.com/spotbugs/spotbugs/releases/tag/4.8.6)에서 `spotbugs-4.8.6.zip`을 내려받아 압축을 풀면 됩니다.
+
+---
+
+### 재실행 시 처음부터 새로 내려받고 싶은 경우
+
+`workspace/` 폴더를 삭제하면 다음 실행 시 모든 프로젝트를 새로 내려받습니다.
+
+**Windows:**
+
+```
+rmdir /s /q workspace
+```
+
+**Mac / Linux:**
+
+```
 rm -rf workspace/
 ```
 
-특정 프로젝트만 재clone하려면 해당 디렉토리만 삭제합니다.
+특정 프로젝트만 새로 내려받고 싶다면 해당 폴더만 삭제하세요.
 
-```bash
+**Windows:**
+
+```
+rmdir /s /q workspace\admin-service
+```
+
+**Mac / Linux:**
+
+```
 rm -rf workspace/admin-service
+```
+
+---
+
+## 부록: 전체 옵션 목록
+
+```
+java -jar build/libs/autospotbug.jar [옵션]
+
+필수:
+  --gitlab-url <주소>    사내 GitLab 서버 주소
+                         예: https://gitlab.company.com
+
+선택:
+  --token <토큰>         GitLab 개인 액세스 토큰
+                         생략 시 환경변수 GITLAB_TOKEN 사용
+  --config <경로>        프로젝트 목록 파일 경로
+                         (기본값: conf/projects.yaml)
+  --output <경로>        보고서 저장 폴더
+                         (기본값: output/)
+  --workspace <경로>     임시 작업 폴더 (프로젝트 clone 위치)
+                         (기본값: workspace/)
+  -h, --help             도움말 출력
 ```

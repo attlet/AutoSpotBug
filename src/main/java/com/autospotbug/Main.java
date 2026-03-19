@@ -3,6 +3,7 @@ package com.autospotbug;
 import com.autospotbug.build.BuildDetector;
 import com.autospotbug.build.BuildTool;
 import com.autospotbug.build.GradleRunner;
+import com.autospotbug.build.MakefileRunner;
 import com.autospotbug.build.MavenRunner;
 import com.autospotbug.config.AppConfig;
 import com.autospotbug.config.ConfigLoader;
@@ -45,10 +46,11 @@ public class Main {
         Files.createDirectories(Path.of(config.getWorkspaceDir()));
 
         // 분석 실행
-        RepoManager    repoManager = new RepoManager(config.getGitlabUrl(), config.getToken(), config.getWorkspaceDir());
-        BuildDetector  detector    = new BuildDetector();
-        GradleRunner   gradle      = new GradleRunner();
-        MavenRunner    maven       = new MavenRunner();
+        RepoManager     repoManager = new RepoManager(config.getGitlabUrl(), config.getToken(), config.getWorkspaceDir());
+        BuildDetector   detector   = new BuildDetector();
+        GradleRunner    gradle     = new GradleRunner();
+        MavenRunner     maven      = new MavenRunner();
+        MakefileRunner  makefile   = new MakefileRunner(Path.of(config.getWorkspaceDir(), ".spotbugs-cache"));
         ReportCollector collector  = new ReportCollector(config.getOutputDir());
 
         List<AnalysisResult> results = new ArrayList<>();
@@ -61,8 +63,8 @@ public class Main {
                 // 1. clone / pull
                 Path repoPath = repoManager.cloneOrPull(project);
 
-                // 2. 빌드 도구 감지
-                BuildTool tool = detector.detect(repoPath);
+                // 2. 빌드 도구 감지 (projects.yaml의 build_tool 명시 시 우선 적용)
+                BuildTool tool = detector.detect(repoPath, project.getBuildTool());
                 log.info("[{}] 빌드 도구: {}", project.getName(), tool);
 
                 // 3. SpotBugs 실행 및 XML 수집
@@ -70,9 +72,13 @@ public class Main {
                 if (tool == BuildTool.GRADLE) {
                     gradle.run(project.getName(), repoPath);
                     reportFiles = gradle.collectReports(repoPath);
-                } else {
+                } else if (tool == BuildTool.MAVEN) {
                     maven.run(project.getName(), repoPath);
                     reportFiles = maven.collectReports(repoPath);
+                } else {
+                    // MAKEFILE: make 빌드 후 SpotBugs CLI 실행
+                    makefile.build(project.getName(), repoPath, project.getMakeTarget());
+                    reportFiles = makefile.runSpotBugs(project.getName(), repoPath, project);
                 }
 
                 if (reportFiles.isEmpty()) {
@@ -112,7 +118,7 @@ public class Main {
 
         options.addOption(Option.builder()
                 .longOpt("config").hasArg()
-                .desc("프로젝트 목록 YAML 파일 경로 (기본: config/projects.yaml)")
+                .desc("프로젝트 목록 YAML 파일 경로 (기본: conf/projects.yaml)")
                 .build());
 
         options.addOption(Option.builder()
@@ -147,7 +153,7 @@ public class Main {
             return new AppConfig(
                     cmd.getOptionValue("gitlab-url"),
                     token,
-                    cmd.getOptionValue("config", "config/projects.yaml"),
+                    cmd.getOptionValue("config", "conf/projects.yaml"),
                     cmd.getOptionValue("output", "output"),
                     cmd.getOptionValue("workspace", "workspace")
             );

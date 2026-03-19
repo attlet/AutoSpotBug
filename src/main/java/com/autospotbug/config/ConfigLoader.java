@@ -34,7 +34,11 @@ public class ConfigLoader {
                     .map(m -> new ProjectConfig(
                             m.get("name"),
                             m.get("path"),
-                            m.get("branch")
+                            m.get("branch"),
+                            m.get("build_tool"),
+                            m.get("make_target"),
+                            m.get("classes_dir"),
+                            m.get("jar_path")
                     ))
                     .toList();
         }

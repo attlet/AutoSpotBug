@@ -12,7 +12,15 @@ public class BuildDetector {
      * @return GRADLE 또는 MAVEN
      * @throws RuntimeException 빌드 도구를 감지할 수 없는 경우
      */
-    public BuildTool detect(Path repoPath) {
+    /**
+     * 빌드 도구를 자동 감지한다.
+     * projects.yaml에 build_tool이 명시된 경우 이를 우선 사용한다.
+     */
+    public BuildTool detect(Path repoPath, String explicitBuildTool) {
+        if (explicitBuildTool != null && !explicitBuildTool.isBlank()) {
+            return BuildTool.valueOf(explicitBuildTool.trim().toUpperCase());
+        }
+
         if (Files.exists(repoPath.resolve("build.gradle")) ||
                 Files.exists(repoPath.resolve("build.gradle.kts"))) {
             return BuildTool.GRADLE;
@@ -20,8 +28,12 @@ public class BuildDetector {
         if (Files.exists(repoPath.resolve("pom.xml"))) {
             return BuildTool.MAVEN;
         }
+        if (Files.exists(repoPath.resolve("Makefile")) ||
+                Files.exists(repoPath.resolve("makefile"))) {
+            return BuildTool.MAKEFILE;
+        }
         throw new RuntimeException(
-                "빌드 도구를 감지할 수 없습니다. build.gradle(kts) 또는 pom.xml이 필요합니다: " + repoPath
+                "빌드 도구를 감지할 수 없습니다. build.gradle(kts), pom.xml, Makefile 중 하나가 필요합니다: " + repoPath
         );
     }
 }
