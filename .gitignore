@@ -1,0 +1,25 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# 런타임 생성물 (clone 저장소 / 분석 결과)
+output/
+workspace/
+spotbugs-run.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env

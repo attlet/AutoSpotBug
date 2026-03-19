@@ -1,0 +1,41 @@
+/**
+ * SpotBugs Gradle Init Script
+ *
+ * 대상 프로젝트의 build.gradle을 수정하지 않고
+ * --init-script 옵션으로 SpotBugs 플러그인을 주입합니다.
+ */
+
+initscript {
+    repositories {
+        maven { url 'https://plugins.gradle.org/m2/' }
+    }
+    dependencies {
+        classpath 'com.github.spotbugs.snom:spotbugs-gradle-plugin:6.+'
+    }
+}
+
+allprojects {
+    afterEvaluate { project ->
+        boolean hasJava = project.plugins.hasPlugin('java') ||
+                          project.plugins.hasPlugin('java-library') ||
+                          project.plugins.hasPlugin('org.springframework.boot')
+
+        if (!hasJava) return
+        if (project.plugins.hasPlugin('com.github.spotbugs')) return
+
+        project.apply plugin: com.github.spotbugs.snom.SpotBugsPlugin
+
+        project.spotbugs {
+            ignoreFailures = true
+            effort = 'max'
+            reportLevel = 'low'
+        }
+
+        project.tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+            reports {
+                xml.required = true
+                html.required = false
+            }
+        }
+    }
+}
